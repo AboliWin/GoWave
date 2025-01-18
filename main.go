@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
@@ -21,11 +22,13 @@ const (
 	Instructions    = "space or \"P\" for play/pause UP & DOWN key for change volume and \"Esc\" for exit"
 	InitialStatus   = "Waiting for channel selection ..."
 	VolumeIncrement = 0.05
+	ChannelCooldown = 300 * time.Millisecond 
 )
 
 var (
 	Keys = []rune("1234567890qwertyuiop")
 )
+
 var (
 	urls       []map[string]string
 	isPlaying  bool
@@ -36,7 +39,9 @@ var (
 	streamer   beep.StreamSeekCloser
 	volumeCtrl *effects.Volume
 	ctrl       *beep.Ctrl
+	lastAction time.Time 
 )
+
 func loadData() error {
 	resp, err := http.Get("https://radio.9craft.ir/v1/api/genre/all")
 	if err != nil {
@@ -91,7 +96,6 @@ func updateDisplay(s tcell.Screen, status string) {
 	drawText(s, 0, row, tcell.StyleDefault.Foreground(tcell.ColorBlue), "Status: ")
 	drawText(s, 8, row, tcell.StyleDefault.Foreground(tcell.ColorPurple), status)
 	row += 2
-
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -145,7 +149,7 @@ func handleVolumeChange(change float64) {
 	}
 	if volumeCtrl != nil {
 		speaker.Lock()
-		volumeCtrl.Volume = -1 + 2*volume // Volume range: -1 (silent) to 1 (max)
+		volumeCtrl.Volume = -1 + 2*volume 
 		speaker.Unlock()
 	}
 }
@@ -162,12 +166,15 @@ func loadStream(index int, url string) error {
 
 	streamer, format, err := mp3.Decode(resp.Body)
 	if err != nil {
+		if strings.Contains(err.Error(), "free bitrate format is not supported") {
+			return fmt.Errorf("unsupported bitrate format, skipping station")
+		}
 		return fmt.Errorf("error decoding stream: %v", err)
 	}
 
 	volumeCtrl = &effects.Volume{
 		Streamer: streamer,
-		Base:     2, // Exponential scale
+		Base:     2, 
 		Volume:   -1 + 2*volume,
 	}
 	ctrl = &beep.Ctrl{Streamer: volumeCtrl, Paused: false}
@@ -210,6 +217,12 @@ func main() {
 		ev := s.PollEvent()
 		switch ev := ev.(type) {
 		case *tcell.EventKey:
+			
+			if time.Since(lastAction) < ChannelCooldown {
+				continue 
+			}
+			lastAction = time.Now()
+
 			switch ev.Key() {
 			case tcell.KeyEscape:
 				close(quit)
