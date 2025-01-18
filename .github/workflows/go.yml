@@ -1,67 +1,63 @@
-name: Go Multi-Platform Build and Release
+name: Build and Release
 
 on:
   push:
-    branches: [ "main" ]  # Trigger on push to main
-    tags:                 # Trigger on tag push
-      - "v*"
-  pull_request:
-    branches: [ "main" ]
+    tags:
+      - 'v*' 
+  workflow_dispatch: 
 
 jobs:
-
-  build-and-release:
+  build:
+    name: Build for All Platforms
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        os: [windows, linux, darwin]  # Target platforms
-        arch: [amd64, arm64]          # Target architectures
+        goos: [linux, windows, darwin]
+        goarch: [amd64, arm64]
 
     steps:
-    - name: Checkout Repository
-      uses: actions/checkout@v4
+    - name: Checkout Code
+      uses: actions/checkout@v3
 
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
         go-version: '1.23'
 
-    - name: Cache Go Modules
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-
-    - name: Install Dependencies
-      run: go mod tidy
-
     - name: Build Binary
-      run: |
-        mkdir -p build
-        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o build/myapp-${{ matrix.os }}-${{ matrix.arch }}
-
-    - name: Test Application
-      run: go test -v ./...
-
-    - name: Upload Release Assets
-      if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-      uses: softprops/action-gh-release@v1
-      with:
-        files: |
-          build/*
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+      run: |
+        mkdir -p dist/${{ matrix.goos }}-${{ matrix.goarch }}
+        go build -o dist/${{ matrix.goos }}-${{ matrix.goarch }}/radio_app
 
-  notify:
-    needs: build-and-release
-    if: failure()
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ matrix.goos }}-${{ matrix.goarch }}
+        path: dist/${{ matrix.goos }}-${{ matrix.goarch }}
+
+  release:
+    name: Create Release
     runs-on: ubuntu-latest
+    needs: build
 
     steps:
-    - name: Send Failure Notification
-      run: echo "Build failed for ${{ github.ref_name }} on ${{ matrix.os }}-${{ matrix.arch }}."
+    - name: Download Build Artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: dist
+
+    - name: Create Release
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "dist/**/*"
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        body: |
+          Automatic release for version ${{ github.ref_name }}.
+        draft: false
+        prerelease: false
