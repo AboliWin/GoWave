@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
@@ -15,7 +16,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/tidwall/gjson"
 )
-
 const (
 	AppName         = "GoWave"
 	Instructions    = "space or \"P\" for play/pause UP & DOWN key for change volume and \"Esc\" for exit"
@@ -39,16 +39,16 @@ var (
 	ctrl       *beep.Ctrl
 )
 
-func loadData() {
+func loadData() error {
 	resp, err := http.Get("https://radio.9craft.ir/v1/api/genre/all")
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("error fetching radio stations: %v", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("error reading response body: %v", err)
 	}
 
 	data := gjson.Get(string(body), "data")
@@ -66,6 +66,7 @@ func loadData() {
 		})
 		mu.Unlock()
 	}
+	return nil
 }
 
 func initScreen() tcell.Screen {
@@ -88,12 +89,9 @@ func initScreen() tcell.Screen {
 func updateDisplay(s tcell.Screen, status string) {
 	s.Clear()
 	row := 0
-
-	// Display app name
 	drawText(s, 0, row, tcell.StyleDefault.Foreground(tcell.ColorGreen), AppName)
 	row += 2
 
-	// Display status
 	drawText(s, 0, row, tcell.StyleDefault.Foreground(tcell.ColorBlue), "Status: ")
 	drawText(s, 8, row, tcell.StyleDefault.Foreground(tcell.ColorPurple), status)
 	row += 2
@@ -135,12 +133,14 @@ func updateDisplay(s tcell.Screen, status string) {
 	s.Show()
 }
 
+
 func drawText(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	for _, r := range []rune(text) {
 		s.SetContent(x, y, r, nil, style)
 		x++
 	}
 }
+
 
 func handleVolumeChange(change float64) {
 	volume += change
@@ -156,9 +156,12 @@ func handleVolumeChange(change float64) {
 	}
 }
 
+
 func main() {
-	fmt.Println("Load stations ...")
-	loadData()
+	fmt.Println("Loading stations ...")
+	if err := loadData(); err != nil {
+		log.Fatalf("Error loading radio stations: %v", err)
+	}
 
 	s := initScreen()
 	defer s.Fini()
@@ -171,7 +174,11 @@ func main() {
 		for {
 			select {
 			case <-time.After(10 * time.Second):
-				loadData()
+				if err := loadData(); err != nil {
+					status = fmt.Sprintf("Error: %v", err)
+				} else {
+					status = InitialStatus
+				}
 				updateDisplay(s, status)
 			case <-quit:
 				return
@@ -222,6 +229,8 @@ func main() {
 						streamer, format, err := mp3.Decode(resp.Body)
 						if err != nil {
 
+							status = "Error: Unsupported stream format"
+							updateDisplay(s, status)
 							continue
 						}
 						volumeCtrl = &effects.Volume{
