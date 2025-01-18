@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	"github.com/faiface/beep"
 	"github.com/faiface/beep/mp3"
 	"github.com/faiface/beep/speaker"
@@ -16,6 +15,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/tidwall/gjson"
 )
+
 const (
 	AppName         = "GoWave"
 	Instructions    = "space or \"P\" for play/pause UP & DOWN key for change volume and \"Esc\" for exit"
@@ -26,7 +26,6 @@ const (
 var (
 	Keys = []rune("1234567890qwertyuiop")
 )
-
 var (
 	urls       []map[string]string
 	isPlaying  bool
@@ -38,7 +37,6 @@ var (
 	volumeCtrl *effects.Volume
 	ctrl       *beep.Ctrl
 )
-
 func loadData() error {
 	resp, err := http.Get("https://radio.9craft.ir/v1/api/genre/all")
 	if err != nil {
@@ -68,7 +66,6 @@ func loadData() error {
 	}
 	return nil
 }
-
 func initScreen() tcell.Screen {
 	s, err := tcell.NewScreen()
 	if err != nil {
@@ -91,7 +88,6 @@ func updateDisplay(s tcell.Screen, status string) {
 	row := 0
 	drawText(s, 0, row, tcell.StyleDefault.Foreground(tcell.ColorGreen), AppName)
 	row += 2
-
 	drawText(s, 0, row, tcell.StyleDefault.Foreground(tcell.ColorBlue), "Status: ")
 	drawText(s, 8, row, tcell.StyleDefault.Foreground(tcell.ColorPurple), status)
 	row += 2
@@ -133,14 +129,12 @@ func updateDisplay(s tcell.Screen, status string) {
 	s.Show()
 }
 
-
 func drawText(s tcell.Screen, x, y int, style tcell.Style, text string) {
 	for _, r := range []rune(text) {
 		s.SetContent(x, y, r, nil, style)
 		x++
 	}
 }
-
 
 func handleVolumeChange(change float64) {
 	volume += change
@@ -151,11 +145,37 @@ func handleVolumeChange(change float64) {
 	}
 	if volumeCtrl != nil {
 		speaker.Lock()
-		volumeCtrl.Volume = -1 + 2*volume 
+		volumeCtrl.Volume = -1 + 2*volume // Volume range: -1 (silent) to 1 (max)
 		speaker.Unlock()
 	}
 }
 
+func loadStream(index int, url string) error {
+	if streamer != nil {
+		streamer.Close()
+	}
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return fmt.Errorf("error loading stream: %v", err)
+	}
+
+	streamer, format, err := mp3.Decode(resp.Body)
+	if err != nil {
+		return fmt.Errorf("error decoding stream: %v", err)
+	}
+
+	volumeCtrl = &effects.Volume{
+		Streamer: streamer,
+		Base:     2, // Exponential scale
+		Volume:   -1 + 2*volume,
+	}
+	ctrl = &beep.Ctrl{Streamer: volumeCtrl, Paused: false}
+	speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
+	speaker.Play(ctrl)
+
+	return nil
+}
 
 func main() {
 	fmt.Println("Loading stations ...")
@@ -218,32 +238,20 @@ func main() {
 				default:
 					index := strings.IndexRune(string(Keys), ev.Rune())
 					if index != -1 && index < len(urls) {
-						if streamer != nil {
-							streamer.Close()
-						}
-						resp, err := http.Get(urls[index]["http_server_url"])
-						if err != nil {
-							log.Printf("Error loading stream: %v", err)
-							continue
-						}
-						streamer, format, err := mp3.Decode(resp.Body)
-						if err != nil {
+						status = "Loading..."
+						updateDisplay(s, status)
 
-							status = "Error: Unsupported stream format"
-							updateDisplay(s, status)
-							continue
-						}
-						volumeCtrl = &effects.Volume{
-							Streamer: streamer,
-							Base:     2, 
-							Volume:   -1 + 2*volume,
-						}
-						ctrl = &beep.Ctrl{Streamer: volumeCtrl, Paused: false}
-						speaker.Init(format.SampleRate, format.SampleRate.N(time.Second/10))
-						speaker.Play(ctrl)
-						playingNow = index
-						isPlaying = true
-						status = "Playing..."
+						go func(index int) {
+							if err := loadStream(index, urls[index]["http_server_url"]); err != nil {
+								status = fmt.Sprintf("Error: %v", err)
+								updateDisplay(s, status)
+							} else {
+								playingNow = index
+								isPlaying = true
+								status = "Playing..."
+								updateDisplay(s, status)
+							}
+						}(index)
 					}
 				}
 			}
