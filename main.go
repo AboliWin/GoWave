@@ -16,7 +16,6 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/tidwall/gjson"
 )
-
 const (
 	AppName         = "GoWave"
 	Instructions    = "space or \"P\" for play/pause UP & DOWN key for change volume and \"Esc\" for exit"
