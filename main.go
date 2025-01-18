@@ -89,9 +89,11 @@ func updateDisplay(s tcell.Screen, status string) {
 	s.Clear()
 	row := 0
 
+	// Display app name
 	drawText(s, 0, row, tcell.StyleDefault.Foreground(tcell.ColorGreen), AppName)
 	row += 2
 
+	// Display status
 	drawText(s, 0, row, tcell.StyleDefault.Foreground(tcell.ColorBlue), "Status: ")
 	drawText(s, 8, row, tcell.StyleDefault.Foreground(tcell.ColorPurple), status)
 	row += 2
@@ -219,7 +221,7 @@ func main() {
 						}
 						streamer, format, err := mp3.Decode(resp.Body)
 						if err != nil {
-							log.Printf("Error decoding stream: %v", err)
+
 							continue
 						}
 						volumeCtrl = &effects.Volume{
