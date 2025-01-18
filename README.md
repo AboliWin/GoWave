@@ -29,3 +29,4 @@ go build main.go
 ./main
 ```
 
+![{679108A6-E8AB-4789-9447-5207707DD32D}](https://github.com/user-attachments/assets/70d94e98-947f-4a62-82ad-76b59ad717f4)
