@@ -73,3 +73,4 @@ jobs:
           body: |
             Automatic release created for version ${{ github.ref_name }}.
             Includes binaries for Linux, Windows, and macOS.
+#
