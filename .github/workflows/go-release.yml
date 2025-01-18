@@ -1,0 +1,54 @@
+name: Go Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  
+
+    strategy:
+      matrix:
+        os: [windows, linux, darwin]  
+        arch: [amd64, arm64]          
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: '1.20'  
+
+    - name: Install dependencies
+      run: go mod tidy  
+
+    - name: Build the Go binary
+      run: |
+        GOOS=${{ matrix.os }} GOARCH=${{ matrix.arch }} go build -o "bin/myapp-${{ matrix.os }}-${{ matrix.arch }}" .
+
+    - name: Create Release Asset
+      id: create_release
+      run: |
+        # Create a release using the GitHub API
+        echo "Creating release..."
+        RELEASE_NAME="v$(git describe --tags)"
+        RESPONSE=$(curl --silent --header "Authorization: token ${{ secrets.GITHUB_TOKEN }}" --data '{"tag_name": "'"${RELEASE_NAME}"'", "name": "'"${RELEASE_NAME}"'", "draft": false, "prerelease": false}' https://api.github.com/repos/${{ github.repository }}/releases)
+        echo "Release created: $RESPONSE"
+        echo "::set-output name=release_id::$(echo $RESPONSE | jq -r '.id')"
+
+    - name: Upload Build Artifacts to GitHub
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          bin/myapp-linux-amd64
+          bin/myapp-linux-arm64
+          bin/myapp-darwin-amd64
+          bin/myapp-darwin-arm64
+          bin/myapp-windows-amd64.exe
+        tag: v$(git describe --tags)
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
